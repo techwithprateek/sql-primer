@@ -48,11 +48,12 @@ ORDER BY customer_state, order_date;
 
 ```sql
 WITH date_spine AS (
-    SELECT generate_series(
+    SELECT CAST(calendar_date AS DATE) AS calendar_date
+    FROM generate_series(
         (SELECT MIN(DATE(order_purchase_timestamp)) FROM orders),
         (SELECT MAX(DATE(order_purchase_timestamp)) FROM orders),
         INTERVAL '1 day'
-    )::date AS calendar_date
+    ) AS t(calendar_date)
 ),
 daily_revenue AS (
     SELECT

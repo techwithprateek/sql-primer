@@ -17,15 +17,23 @@ The inner `SELECT AVG(order_value) FROM order_totals` is non-correlated — it c
 ### 2. Sellers with above-average review scores per category (correlated)
 
 ```sql
-WITH seller_category_scores AS (
-    SELECT
+WITH seller_category_reviews AS (
+    SELECT DISTINCT
         oi.seller_id,
         p.product_category_name,
-        AVG(r.review_score) AS seller_avg_score
+        oi.order_id,
+        r.review_score
     FROM order_items oi
     JOIN products p       ON p.product_id = oi.product_id
     JOIN order_reviews r  ON r.order_id = oi.order_id
-    GROUP BY oi.seller_id, p.product_category_name
+),
+seller_category_scores AS (
+    SELECT
+        seller_id,
+        product_category_name,
+        AVG(review_score) AS seller_avg_score
+    FROM seller_category_reviews
+    GROUP BY seller_id, product_category_name
 )
 SELECT s.*
 FROM seller_category_scores s
@@ -36,6 +44,8 @@ WHERE s.seller_avg_score > (
 );
 ```
 This is correlated: the inner query's `WHERE s2.product_category_name = s.product_category_name` ties the inner average to whichever category the outer row belongs to, so it effectively recomputes per category. This is the direct SQL translation of "beat your own peer group's average," not the global average.
+
+The extra `seller_category_reviews` step (with `SELECT DISTINCT`) exists for the same reason as in [Aggregations #3](../05-aggregations/solutions.md): joining `order_items` straight to `order_reviews` on `order_id` duplicates a review once per item in that order, so a seller with two same-category items in one order would silently double-weight that review in the average. Deduplicating to one row per `(seller_id, category, order_id)` before aggregating removes that bias.
 
 ### 3. Customers who have ordered, using EXISTS
 

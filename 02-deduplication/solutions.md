@@ -51,11 +51,12 @@ Same shape as Q1, different partition key and tiebreaker — this is the general
 ### 4. Safe delete
 
 ```sql
-DELETE FROM order_reviews
-WHERE review_id IN (
-    SELECT review_id
+DELETE FROM order_reviews AS o
+WHERE EXISTS (
+    SELECT 1
     FROM (
         SELECT
+            order_id,
             review_id,
             ROW_NUMBER() OVER (
                 PARTITION BY order_id
@@ -63,10 +64,14 @@ WHERE review_id IN (
             ) AS rn
         FROM order_reviews
     ) ranked
-    WHERE rn > 1
+    WHERE ranked.order_id = o.order_id
+      AND ranked.review_id = o.review_id
+      AND ranked.rn > 1
 );
 ```
-Notice this is the exact inverse of Q1's filter (`rn > 1` instead of `rn = 1`) — always write and eyeball the `SELECT rn = 1` version first; the `DELETE` should only ever remove what that query *didn't* return.
+This is the exact inverse of Q1's filter (`rn > 1` instead of `rn = 1`) — always write and eyeball the `SELECT rn = 1` version first; the `DELETE` should only ever remove what that query *didn't* return.
+
+**Why not `WHERE review_id IN (SELECT review_id FROM ranked WHERE rn > 1)`?** It's tempting, but wrong on this dataset: `review_id` on its own is **not globally unique** in `order_reviews` — the same `review_id` can appear attached to several different `order_id`s. An `IN` filter on `review_id` alone would delete every row sharing that id, including legitimate rn = 1 rows that belong to a *different* order. The `EXISTS` version above matches on the full `(order_id, review_id)` pair, so it only ever targets the exact duplicate rows within their own order. On the real dataset, the naive `IN` version deletes 696 rows instead of the correct 551 — a 145-row silent over-deletion that would only surface later as missing reviews for orders that never actually had duplicates.
 
 ### 5. True duplicates in order_payments
 
